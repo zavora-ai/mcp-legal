@@ -281,6 +281,80 @@ impl LegalServer {
         }
     }
 
+    // === Australia (Federal Register of Legislation) ===
+
+    #[tool(description = "Search Australian legislation (Acts, Legislative Instruments) by keyword")]
+    async fn search_australian_legislation(&self, Parameters(input): Parameters<SearchQuery>) -> String {
+        let limit = input.limit.unwrap_or(5);
+        let url = format!("https://api.prod.legislation.gov.au/v1/titles?$filter=contains(name,'{}')&$top={}", input.query.replace(' ', "%20"), limit);
+        match self.client.get(&url).send().await {
+            Ok(resp) => match resp.json::<Value>().await {
+                Ok(data) => {
+                    let results: Vec<LegalResult> = data["value"].as_array().unwrap_or(&vec![]).iter().map(|r| {
+                        LegalResult {
+                            source: "australian_frl".into(), source_type: "legislation".into(), jurisdiction: "AU".into(),
+                            title: r["name"].as_str().unwrap_or_default().to_string(),
+                            citation: r["id"].as_str().map(String::from),
+                            source_url: r["id"].as_str().map(|id| format!("https://www.legislation.gov.au/{}/latest", id)),
+                            retrieved_at: now(),
+                            published_at: r["makingDate"].as_str().map(|d| d.chars().take(10).collect()),
+                            effective_date: None,
+                            version_status: if r["isInForce"].as_bool().unwrap_or(false) { "current" } else { "not_in_force" }.into(),
+                            text: None, summary: None,
+                            metadata: json!({"collection": r["collection"], "sub_collection": r["subCollection"]}),
+                            warnings: vec![], not_legal_advice: true, human_review_recommended: true,
+                        }
+                    }).collect();
+                    serde_json::to_string_pretty(&results).unwrap_or_default()
+                }
+                Err(e) => format!("Error: {e}"),
+            },
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    // === Japan (e-Gov Laws API) ===
+
+    #[tool(description = "Search Japanese laws via e-Gov API (Constitution, Acts, Cabinet Orders). Note: law names are in Japanese")]
+    async fn search_japanese_laws(&self, Parameters(input): Parameters<SearchQuery>) -> String {
+        let url = "https://elaws.e-gov.go.jp/api/1/lawlists/1";
+        match self.client.get(url).send().await {
+            Ok(resp) => match resp.text().await {
+                Ok(xml) => {
+                    let q = input.query.to_lowercase();
+                    let limit = input.limit.unwrap_or(5) as usize;
+                    let mut results = Vec::new();
+                    let mut rest = xml.as_str();
+                    while let Some(start) = rest.find("<LawNameListInfo>") {
+                        let end = match rest[start..].find("</LawNameListInfo>") { Some(i) => start + i + 18, None => break };
+                        let entry = &rest[start..end];
+                        let law_name = extract_xml_tag(entry, "LawName").unwrap_or_default();
+                        let law_id = extract_xml_tag(entry, "LawId").unwrap_or_default();
+                        if law_name.to_lowercase().contains(&q) || law_id.to_lowercase().contains(&q) {
+                            results.push(LegalResult {
+                                source: "japan_egov".into(), source_type: "legislation".into(), jurisdiction: "JP".into(),
+                                title: law_name, citation: Some(law_id.clone()),
+                                source_url: Some(format!("https://elaws.e-gov.go.jp/document?lawid={}", law_id)),
+                                retrieved_at: now(), published_at: None, effective_date: None,
+                                version_status: "current".into(), text: None, summary: None,
+                                metadata: json!({"law_id": law_id}),
+                                warnings: vec!["Japanese law text is authoritative in Japanese only.".into()],
+                                not_legal_advice: true, human_review_recommended: true,
+                            });
+                        }
+                        if results.len() >= limit { break; }
+                        rest = &rest[end..];
+                    }
+                    if results.is_empty() {
+                        json!({"note": "No matches. Japan e-Gov returns Japanese law names. Try Japanese keywords or law IDs.", "not_legal_advice": true}).to_string()
+                    } else { serde_json::to_string_pretty(&results).unwrap_or_default() }
+                }
+                Err(e) => format!("Error: {e}"),
+            },
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
     // === Sanctions (Open Sanctions) ===
 
     #[tool(description = "Screen an entity against global sanctions lists (200+ lists, PEPs, watchlists). Returns match confidence")]
