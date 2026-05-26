@@ -1,0 +1,109 @@
+server_id = "mcp_legal"
+display_name = "Legal"
+version = "1.0.0"
+domain = "legal"
+sdk_version = "0.1.0"
+risk_level = "medium"
+writes_allowed = "none"
+transports = ["stdio"]
+credentials = []
+governance_gates = ["no_legal_advice", "citation_required", "human_review_recommended"]
+environments = ["development", "staging", "production"]
+
+[[tools]]
+name = "search_cases"
+description = "Search US case law opinions by keyword"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "get_case"
+description = "Get a specific US court opinion by cluster ID"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "search_uk_legislation"
+description = "Search UK legislation by keyword"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "get_uk_legislation"
+description = "Get UK legislation by identifier"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "search_eu_legislation"
+description = "Search EU legislation on EUR-Lex"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "get_eu_document"
+description = "Get EU document by CELEX number"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "search_federal_register"
+description = "Search US Federal Register for regulations"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "get_federal_register_document"
+description = "Get Federal Register document by number"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "screen_entity"
+description = "Screen entity against global sanctions lists"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "search_sanctions"
+description = "Search sanctions lists by keyword"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "get_sanctions_record"
+description = "Get detailed sanctions record by entity ID"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "list_supported_jurisdictions"
+description = "List supported jurisdictions and sources"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "list_supported_sources"
+description = "List available legal data sources"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = []
+
+[[tools]]
+name = "get_coverage_status"
+description = "Get coverage status and known gaps"
+risk_class = "read_only"
+requires_approval = false
+credential_bindings = []

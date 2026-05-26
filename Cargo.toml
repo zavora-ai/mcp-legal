@@ -1,0 +1,21 @@
+[workspace]
+
+[package]
+name = "mcp-legal"
+version = "1.0.0"
+edition = "2024"
+description = "Global legal reference MCP server — case law, legislation, regulations, sanctions screening across US, UK, EU, Africa, Canada, Australia"
+license = "Apache-2.0"
+repository = "https://github.com/zavora-ai/mcp-legal"
+keywords = ["mcp", "legal", "case-law", "legislation", "sanctions"]
+categories = ["api-bindings"]
+
+[dependencies]
+adk-mcp-sdk = "0.1"
+rmcp = { version = "1.7", features = ["server", "transport-io", "macros"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json"] }
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
