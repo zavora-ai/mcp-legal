@@ -408,7 +408,82 @@ impl LegalServer {
         }
     }
 
-    // === Canada (Justice Laws) ===
+    // === Sweden (Riksdagen JSON API) ===
+
+    #[tool(description = "Search Swedish legislation via Riksdagen API (returns structured results with dates and IDs)")]
+    async fn search_swedish_legislation(&self, Parameters(input): Parameters<SearchQuery>) -> String {
+        let limit = input.limit.unwrap_or(5);
+        let url = format!("https://data.riksdagen.se/dokumentlista/?sok={}&doktyp=sfs&utformat=json&antal={}", input.query.replace(' ', "+"), limit);
+        match self.client.get(&url).send().await {
+            Ok(resp) => match resp.json::<Value>().await {
+                Ok(data) => {
+                    let docs = data["dokumentlista"]["dokument"].as_array().unwrap_or(&vec![]).clone();
+                    let results: Vec<LegalResult> = docs.iter().map(|d| LegalResult {
+                        source: "riksdagen".into(), source_type: "legislation".into(), jurisdiction: "SE".into(),
+                        title: d["titel"].as_str().unwrap_or_default().to_string(),
+                        citation: d["id"].as_str().map(String::from),
+                        source_url: d["dokument_url_html"].as_str().map(|u| format!("https:{u}")),
+                        retrieved_at: now(), published_at: d["datum"].as_str().map(String::from),
+                        effective_date: None, version_status: "current".into(),
+                        text: None, summary: d["summary"].as_str().map(String::from),
+                        metadata: json!({"id": d["id"], "rm": d["rm"]}),
+                        warnings: vec!["Swedish text. Use translation tools for English.".into()],
+                        not_legal_advice: true, human_review_recommended: true,
+                    }).collect();
+                    serde_json::to_string_pretty(&results).unwrap_or_default()
+                }
+                Err(e) => format!("Error: {e}"),
+            },
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    // === Norway (Lovdata) ===
+
+    #[tool(description = "Get Norwegian law in English by Lovdata path (e.g. lov/2018-06-15-38 for Personal Data Act)")]
+    async fn get_norwegian_law(&self, Parameters(input): Parameters<LegislationInput>) -> String {
+        let url = format!("https://lovdata.no/dokument/NLE/{}", input.identifier);
+        let result = LegalResult {
+            source: "lovdata".into(), source_type: "legislation".into(), jurisdiction: "NO".into(),
+            title: format!("Norwegian Law: {}", input.identifier),
+            citation: Some(input.identifier.clone()),
+            source_url: Some(url),
+            retrieved_at: now(), published_at: None, effective_date: None,
+            version_status: "current".into(), text: None, summary: None,
+            metadata: json!({"identifier": input.identifier, "common_laws": {"lov/2018-06-15-38": "Personal Data Act", "lov/2005-06-17-62": "Working Environment Act", "lov/1997-06-13-44": "Companies Act"}}),
+            warnings: vec![], not_legal_advice: true, human_review_recommended: true,
+        };
+        serde_json::to_string_pretty(&result).unwrap_or_default()
+    }
+
+    // === South Korea (KLRI) ===
+
+    #[tool(description = "Get South Korean law in English by KLRI hseq number (e.g. 53044 for Personal Information Protection Act)")]
+    async fn get_korean_law(&self, Parameters(input): Parameters<LegislationInput>) -> String {
+        let url = format!("https://elaw.klri.re.kr/eng_service/lawView.do?hseq={}&lang=ENG", input.identifier);
+        match self.client.get(&url).send().await {
+            Ok(resp) => {
+                let status = resp.status().as_u16();
+                let title = if status == 200 {
+                    resp.text().await.ok().and_then(|h| extract_html_title(&h)).unwrap_or_else(|| format!("Korean Law hseq:{}", input.identifier))
+                } else { format!("Korean Law hseq:{}", input.identifier) };
+                let result = LegalResult {
+                    source: "klri".into(), source_type: "legislation".into(), jurisdiction: "KR".into(),
+                    title, citation: Some(input.identifier.clone()),
+                    source_url: Some(url),
+                    retrieved_at: now(), published_at: None, effective_date: None,
+                    version_status: if status == 200 { "current" } else { "unknown" }.into(),
+                    text: None, summary: None,
+                    metadata: json!({"hseq": input.identifier, "common_laws": {"53044": "Personal Information Protection Act", "46795": "Act on Promotion of IT Network Use", "55211": "Credit Information Act"}}),
+                    warnings: vec![], not_legal_advice: true, human_review_recommended: true,
+                };
+                serde_json::to_string_pretty(&result).unwrap_or_default()
+            }
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    // === Germany ===
 
     #[tool(description = "Get German federal law in English translation (e.g. bdsg for Data Protection, bgb for Civil Code, stgb for Criminal Code)")]
     async fn get_german_law(&self, Parameters(input): Parameters<LegislationInput>) -> String {
