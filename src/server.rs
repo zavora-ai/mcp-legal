@@ -410,6 +410,55 @@ impl LegalServer {
 
     // === Canada (Justice Laws) ===
 
+    #[tool(description = "Get German federal law in English translation (e.g. bdsg for Data Protection, bgb for Civil Code, stgb for Criminal Code)")]
+    async fn get_german_law(&self, Parameters(input): Parameters<LegislationInput>) -> String {
+        let code = input.identifier.to_lowercase();
+        let url = format!("https://www.gesetze-im-internet.de/englisch_{}/", code);
+        match self.client.get(&url).send().await {
+            Ok(resp) => {
+                let status = resp.status().as_u16();
+                let title = if status == 200 {
+                    match resp.text().await {
+                        Ok(html) => extract_html_title(&html).unwrap_or_else(|| format!("German Law: {}", code)),
+                        Err(_) => format!("German Law: {}", code),
+                    }
+                } else { format!("German Law: {}", code) };
+                let result = LegalResult {
+                    source: "gesetze_im_internet".into(), source_type: "legislation".into(), jurisdiction: "DE".into(),
+                    title, citation: Some(code.to_uppercase()),
+                    source_url: Some(url),
+                    retrieved_at: now(), published_at: None, effective_date: None,
+                    version_status: if status == 200 { "current" } else { "unknown" }.into(),
+                    text: None, summary: None,
+                    metadata: json!({"code": code, "language": "english", "common_codes": {"BDSG": "Data Protection", "BGB": "Civil Code", "StGB": "Criminal Code", "HGB": "Commercial Code", "GG": "Basic Law (Constitution)", "AktG": "Stock Corporation Act", "GmbHG": "Limited Liability Companies Act", "UrhG": "Copyright Act"}}),
+                    warnings: vec!["English translation provided for convenience. German text is authoritative.".into()],
+                    not_legal_advice: true, human_review_recommended: true,
+                };
+                serde_json::to_string_pretty(&result).unwrap_or_default()
+            }
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    #[tool(description = "Get Swiss federal law by ELI identifier (e.g. cc/2022/491 for Data Protection Act, cc/1907/637 for Civil Code)")]
+    async fn get_swiss_law(&self, Parameters(input): Parameters<LegislationInput>) -> String {
+        let url = format!("https://www.fedlex.admin.ch/eli/{}/en", input.identifier);
+        let result = LegalResult {
+            source: "fedlex".into(), source_type: "legislation".into(), jurisdiction: "CH".into(),
+            title: format!("Swiss Law: {}", input.identifier),
+            citation: Some(input.identifier.clone()),
+            source_url: Some(url),
+            retrieved_at: now(), published_at: None, effective_date: None,
+            version_status: "current".into(),
+            text: None, summary: None,
+            metadata: json!({"eli": input.identifier, "common_laws": {"cc/2022/491": "Data Protection Act (nDSG)", "cc/1907/637": "Civil Code (ZGB)", "cc/1911/321": "Code of Obligations (OR)", "cc/1937/399": "Criminal Code (StGB)"}}),
+            warnings: vec![], not_legal_advice: true, human_review_recommended: true,
+        };
+        serde_json::to_string_pretty(&result).unwrap_or_default()
+    }
+
+    // === Canada (Justice Laws) ===
+
     #[tool(description = "Get Canadian federal legislation full text by act code (e.g. P-21 for Privacy Act, C-46 for Criminal Code, A-1 for Access to Information)")]
     async fn get_canadian_law(&self, Parameters(input): Parameters<LegislationInput>) -> String {
         let url = format!("https://laws-lois.justice.gc.ca/eng/XML/{}.xml", input.identifier);
