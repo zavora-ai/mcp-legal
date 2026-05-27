@@ -408,6 +408,90 @@ impl LegalServer {
         }
     }
 
+    // === Canada (Justice Laws) ===
+
+    #[tool(description = "Get Canadian federal legislation full text by act code (e.g. P-21 for Privacy Act, C-46 for Criminal Code, A-1 for Access to Information)")]
+    async fn get_canadian_law(&self, Parameters(input): Parameters<LegislationInput>) -> String {
+        let url = format!("https://laws-lois.justice.gc.ca/eng/XML/{}.xml", input.identifier);
+        match self.client.get(&url).send().await {
+            Ok(resp) => match resp.text().await {
+                Ok(xml) => {
+                    let title = extract_xml_tag(&xml, "ShortTitle").or_else(|| extract_xml_tag(&xml, "LongTitle")).unwrap_or_default();
+                    let text_excerpt = xml.chars().take(3000).collect::<String>();
+                    let result = LegalResult {
+                        source: "canada_justice_laws".into(), source_type: "legislation".into(), jurisdiction: "CA".into(),
+                        title, citation: Some(input.identifier.clone()),
+                        source_url: Some(format!("https://laws-lois.justice.gc.ca/eng/acts/{}/", input.identifier)),
+                        retrieved_at: now(), published_at: None, effective_date: None,
+                        version_status: "current".into(),
+                        text: Some(text_excerpt),
+                        summary: extract_xml_tag(&xml, "LongTitle"),
+                        metadata: json!({"act_code": input.identifier, "format": "xml_full_text"}),
+                        warnings: vec![], not_legal_advice: true, human_review_recommended: true,
+                    };
+                    serde_json::to_string_pretty(&result).unwrap_or_default()
+                }
+                Err(e) => format!("Error: {e}"),
+            },
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    // === Ireland (Irish Statute Book) ===
+
+    #[tool(description = "Get Irish legislation by year and act number (e.g. 2018/act/7 for Data Protection Act 2018)")]
+    async fn get_irish_legislation(&self, Parameters(input): Parameters<LegislationInput>) -> String {
+        let url = format!("https://www.irishstatutebook.ie/eli/{}/enacted/en/html", input.identifier);
+        match self.client.get(&url).send().await {
+            Ok(resp) => {
+                let status = resp.status().as_u16();
+                match resp.text().await {
+                    Ok(html) => {
+                        let title = extract_html_title(&html).unwrap_or_default();
+                        let result = LegalResult {
+                            source: "irish_statute_book".into(), source_type: "legislation".into(), jurisdiction: "IE".into(),
+                            title, citation: Some(input.identifier.clone()),
+                            source_url: Some(url),
+                            retrieved_at: now(), published_at: None, effective_date: None,
+                            version_status: if status == 200 { "current" } else { "unknown" }.into(),
+                            text: None, summary: None,
+                            metadata: json!({"identifier": input.identifier, "format": "html"}),
+                            warnings: vec![], not_legal_advice: true, human_review_recommended: true,
+                        };
+                        serde_json::to_string_pretty(&result).unwrap_or_default()
+                    }
+                    Err(e) => format!("Error: {e}"),
+                }
+            }
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
+    // === New Zealand ===
+
+    #[tool(description = "Get New Zealand legislation by identifier (e.g. act/public/2020/0031 for Privacy Act 2020)")]
+    async fn get_nz_legislation(&self, Parameters(input): Parameters<LegislationInput>) -> String {
+        let url = format!("https://legislation.govt.nz/{}/latest/whole.html", input.identifier);
+        match self.client.get(&url).send().await {
+            Ok(resp) => {
+                let status = resp.status().as_u16();
+                let result = LegalResult {
+                    source: "nz_legislation".into(), source_type: "legislation".into(), jurisdiction: "NZ".into(),
+                    title: format!("NZ {}", input.identifier),
+                    citation: Some(input.identifier.clone()),
+                    source_url: Some(url),
+                    retrieved_at: now(), published_at: None, effective_date: None,
+                    version_status: if status == 200 { "current" } else { "unknown" }.into(),
+                    text: None, summary: None,
+                    metadata: json!({"identifier": input.identifier, "common_ids": {"Privacy_Act_2020": "act/public/2020/0031", "Employment_Relations": "act/public/2000/0024", "Companies_Act": "act/public/1993/0105"}}),
+                    warnings: vec![], not_legal_advice: true, human_review_recommended: true,
+                };
+                serde_json::to_string_pretty(&result).unwrap_or_default()
+            }
+            Err(e) => format!("Error: {e}"),
+        }
+    }
+
     // === Metadata ===
 
     #[tool(description = "List all supported jurisdictions and their available legal data sources")]
@@ -425,6 +509,15 @@ impl LegalServer {
             ]},
             JurisdictionInfo { jurisdiction: "Global".into(), sources: vec![
                 SourceInfo { name: "Open Sanctions".into(), data_types: vec!["sanctions".into(), "peps".into(), "watchlists".into()], update_cadence: "daily".into(), reliability: "high".into() },
+            ]},
+            JurisdictionInfo { jurisdiction: "CA".into(), sources: vec![
+                SourceInfo { name: "Justice Laws (XML)".into(), data_types: vec!["federal_acts".into(), "regulations".into()], update_cadence: "weekly".into(), reliability: "high".into() },
+            ]},
+            JurisdictionInfo { jurisdiction: "IE".into(), sources: vec![
+                SourceInfo { name: "Irish Statute Book".into(), data_types: vec!["acts".into()], update_cadence: "as_enacted".into(), reliability: "high".into() },
+            ]},
+            JurisdictionInfo { jurisdiction: "NZ".into(), sources: vec![
+                SourceInfo { name: "NZ Legislation".into(), data_types: vec!["acts".into(), "regulations".into()], update_cadence: "weekly".into(), reliability: "high".into() },
             ]},
         ];
         serde_json::to_string_pretty(&jurisdictions).unwrap_or_default()
@@ -513,4 +606,10 @@ fn extract_xml_tag(xml: &str, tag: &str) -> Option<String> {
     let end = xml[content_start..].find(&close)?;
     let raw = &xml[content_start..content_start + end];
     Some(raw.trim().to_string())
+}
+
+fn extract_html_title(html: &str) -> Option<String> {
+    let start = html.find("<title>")? + 7;
+    let end = html[start..].find("</title>")? + start;
+    Some(html[start..end].trim().to_string())
 }
